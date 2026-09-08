@@ -18,19 +18,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 러너 기본 여유 디스크(~14GB)로는 부족 → 불필요 SDK 제거로 ~30GB 확보
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune -af
-          df -h /
+      # 1) 루트 디스크 정리 (~30GB 확보)
+      - name: Free disk space (root)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
-      - uses: docker/setup-buildx-action@v3
+      # 2) Docker 저장소를 /mnt(러너 보조 디스크, ~60GB 여유)로 이동
+      - name: Move docker data-root to /mnt
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          docker info | grep -i "docker root dir"
+          df -h / /mnt
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker 드라이버(데몬 저장소 사용) — GHA 레이어 캐시는 디스크를 추가로 먹으므로 사용 안 함
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -41,5 +60,7 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:5.10.0-sage
             ${{ env.IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+      - name: Disk usage after build
+        if: always()
+        run: df -h / /mnt
