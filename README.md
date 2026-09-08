@@ -25,3 +25,10 @@ Wan 2.2 i2v fp8_scaled 워크플로용 서버리스 이미지.
 
 ## 롤백
 엔드포인트 Image를 `runpod/worker-comfyui:5.10.0-base`(또는 기존 Hub 이미지)로 되돌리기. env `COMFY_ARGS`는 원본 start.sh에서 무시됨.
+
+## bake/Dockerfile — 모델 내장 이미지 (RunPod GitHub 빌드)
+- base `ghcr.io/changkyuneun-ux/worker-comfyui-wan:5.10.0-sage` + Wan2.2 i2v fp8 high/low, lightx2v LoRA ×2, umt5 fp8, VAE (≈49GB)
+- RunPod 콘솔 → New Endpoint → Import Git Repository → Dockerfile Path `bake/Dockerfile`
+- 빌드 결과 이미지(`registry.runpod.net/...`)를 운영 엔드포인트 Image에 지정하면 ID 유지 가능
+- 모델/노드 추가 시: Dockerfile 수정 → push → GitHub Release 생성 → RunPod 자동 재빌드
+- 소형 모델은 빌드 없이 env `EXTRA_MODELS="url|models/loras/x.safetensors,..."` 로 부팅 시 다운로드

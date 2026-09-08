@@ -41,6 +41,20 @@ comfy-manager-set-mode offline || echo "worker-comfyui - Could not set ComfyUI-M
 : "${COMFY_LOG_LEVEL:=INFO}"
 # 추가 기동 인자 (예: --use-sage-attention --fast fp8_matrix_mult --highvram)
 : "${COMFY_ARGS:=}"
+
+# 빌드 없이 소형 모델(LoRA 등) 추가: EXTRA_MODELS="url|models/loras/a.safetensors,url|models/loras/b.safetensors"
+# 이미 존재하면 건너뜀. 실패해도 기동은 계속(해당 모델만 없음).
+if [ -n "$EXTRA_MODELS" ]; then
+    IFS=',' read -ra _EM <<< "$EXTRA_MODELS"
+    for item in "${_EM[@]}"; do
+        url="${item%%|*}"; rel="${item##*|}"; dst="/comfyui/${rel}"
+        if [ -s "$dst" ]; then echo "worker-comfyui: EXTRA_MODELS exists $rel"; continue; fi
+        mkdir -p "$(dirname "$dst")"
+        echo "worker-comfyui: EXTRA_MODELS downloading $rel"
+        if ! wget -q --tries=3 -O "$dst.part" "$url"; then echo "worker-comfyui: EXTRA_MODELS FAILED $rel" >&2; rm -f "$dst.part"; continue; fi
+        mv "$dst.part" "$dst"
+    done
+fi
 echo "worker-comfyui: Starting ComfyUI (extra args: ${COMFY_ARGS})"
 
 COMFY_PID_FILE="/tmp/comfyui.pid"

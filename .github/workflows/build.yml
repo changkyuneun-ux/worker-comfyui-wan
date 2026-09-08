@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # bake/ (RunPod 빌드용)와 문서 변경은 sage 이미지 재빌드(31분) 불필요.
+    # start.sh 변경 시 sage 이미지에도 반영하려면 Actions에서 workflow_dispatch로 수동 실행.
+    paths-ignore:
+      - "bake/**"
+      - "**.md"
+      - "start.sh"
   workflow_dispatch:
 
 env:
