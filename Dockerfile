@@ -32,7 +32,11 @@ RUN git clone --depth 1 --branch ${SAGE_REF} https://github.com/thu-ml/SageAtten
 # GitHub 러너(4 vCPU/16GB)에서 OOM 방지를 위해 병렬도 최소화
 ARG SAGE_ARCHS="12.0"
 ENV TORCH_CUDA_ARCH_LIST=${SAGE_ARCHS} EXT_PARALLEL=1 MAX_JOBS=2 NVCC_APPEND_FLAGS="--threads 2"
-RUN cd /src/SageAttention && python -m pip wheel . --no-build-isolation --no-deps -w /wheels && ls -la /wheels
+# torch가 pip로 가져온 nvidia-* 패키지의 헤더(cusparse.h 등)를 포함 경로에 추가 (cuda-minimal-build에 dev 헤더가 없을 경우 대비)
+RUN cd /src/SageAttention \
+    && export CPATH="$(ls -d /opt/venv/lib/python3.12/site-packages/nvidia/*/include 2>/dev/null | paste -sd:):${CPATH}" \
+    && echo "CPATH=$CPATH" \
+    && python -m pip wheel . --no-build-isolation --no-deps -w /wheels && ls -la /wheels
 
 # ---------- Stage 2: 최종 이미지 ----------
 FROM runpod/worker-comfyui:${WORKER_VERSION}-base
