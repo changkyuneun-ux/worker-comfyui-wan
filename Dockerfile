@@ -10,11 +10,19 @@ ARG WORKER_VERSION=5.10.0
 FROM runpod/worker-comfyui:${WORKER_VERSION}-base AS sage-builder
 ARG SAGE_REF=main
 ENV DEBIAN_FRONTEND=noninteractive
+# 진단용: 현재 환경 출력
+RUN cat /etc/os-release | head -3; python --version; ls /etc/apt/sources.list.d/ || true
+# (1) 빌드 도구
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential python3.12-dev git wget ca-certificates gnupg \
-    && wget -qO /tmp/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
-    && dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb \
-    && apt-get update && apt-get install -y --no-install-recommends cuda-minimal-build-12-8 \
+        build-essential python3-dev git wget ca-certificates gnupg \
+    && rm -rf /var/lib/apt/lists/*
+# (2) NVIDIA apt 저장소 — base(nvidia/cuda) 이미지에 이미 등록돼 있으면 건너뜀
+RUN if ! ls /etc/apt/sources.list.d/ | grep -qi cuda; then \
+      wget -qO /tmp/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+      && dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb; \
+    fi
+# (3) nvcc + cudart 헤더
+RUN apt-get update && apt-get install -y --no-install-recommends cuda-minimal-build-12-8 \
     && rm -rf /var/lib/apt/lists/*
 ENV CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:/opt/venv/bin:$PATH
 RUN python -c "import torch, sys; print('torch', torch.__version__, 'py', sys.version)" && nvcc --version
