@@ -28,8 +28,10 @@ ENV CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:/opt/venv/bin:$
 RUN python -c "import torch, sys; print('torch', torch.__version__, 'py', sys.version)" && nvcc --version
 RUN uv pip install ninja packaging setuptools wheel
 RUN git clone --depth 1 --branch ${SAGE_REF} https://github.com/thu-ml/SageAttention.git /src/SageAttention
-# 8.9 = L40S / RTX 6000 Ada, 12.0 = RTX PRO 6000 Blackwell
-ENV TORCH_CUDA_ARCH_LIST="8.9;12.0" EXT_PARALLEL=4 MAX_JOBS=4 NVCC_APPEND_FLAGS="--threads 4"
+# 12.0 = RTX PRO 6000 Blackwell (현재 운영 풀). Ada(L40S/6000 Ada)까지 쓰려면 "8.9;12.0"
+# GitHub 러너(4 vCPU/16GB)에서 OOM 방지를 위해 병렬도 최소화
+ARG SAGE_ARCHS="12.0"
+ENV TORCH_CUDA_ARCH_LIST=${SAGE_ARCHS} EXT_PARALLEL=1 MAX_JOBS=2 NVCC_APPEND_FLAGS="--threads 2"
 RUN cd /src/SageAttention && python -m pip wheel . --no-build-isolation --no-deps -w /wheels && ls -la /wheels
 
 # ---------- Stage 2: 최종 이미지 ----------
