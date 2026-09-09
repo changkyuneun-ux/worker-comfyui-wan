@@ -43,8 +43,8 @@ manifest (manifestKey 에 저장):
 자격증명: 엔드포인트 env (RunPod Secrets 권장) — AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION + AWS_DEFAULT_REGION
 
 가드 (모든 요청에 적용, GPU 실행 전 검사):
-  WanImageToVideo 등 영상 노드의 width*height > WAN_MAX_PIXELS(기본 409600=832x480) 또는 length > WAN_MAX_FRAMES(기본 81)
-  → 즉시 실패. 응답/manifest 의 "generation": [{nodeId, classType, width, height, length}] 에 실제 값 기록.
+  WanImageToVideo 등 영상 노드의 width*height > WAN_MAX_PIXELS(기본 921600=720p) 또는 length > WAN_MAX_FRAMES(기본 81),
+  전체 length 합계 > WAN_MAX_TOTAL_FRAMES(기본 162) → 즉시 실패. 응답/manifest 의 "generation": [{nodeId, classType, width, height, length}] 에 실제 값 기록.
 """
 
 import base64
@@ -94,24 +94,49 @@ def _now():
 
 _VIDEO_NODES = ("WanImageToVideo", "WanFirstLastFrameToVideo", "WanFunControlToVideo", "WanVaceToVideo",
                 "EmptyHunyuanLatentVideo", "Wan22ImageToVideoLatent")
-MAX_PIXELS = int(os.environ.get("WAN_MAX_PIXELS", "409600"))   # 832*480
+MAX_PIXELS = int(os.environ.get("WAN_MAX_PIXELS", "921600"))   # 1280*720 (720p 상한). 480p 운영 시 409600
 MAX_FRAMES = int(os.environ.get("WAN_MAX_FRAMES", "81"))          # 노드(세그먼트)당 프레임
 MAX_TOTAL_FRAMES = int(os.environ.get("WAN_MAX_TOTAL_FRAMES", "162"))  # 워크플로 전체 합계 (10s 체인 = 81+81)
+
+
+def _resolve(workflow, val, depth=0):
+    """링크([node_id, idx])면 Primitive*/ComfyMathExpression 을 따라가 상수로 환원. 불가하면 None."""
+    if not (isinstance(val, list) and len(val) == 2 and isinstance(val[0], str)):
+        return val
+    if depth > 8:
+        return None
+    src = workflow.get(val[0]) or {}
+    ct, inp = src.get("class_type"), src.get("inputs") or {}
+    if ct in ("PrimitiveInt", "PrimitiveFloat", "PrimitiveBoolean", "PrimitiveString"):
+        return inp.get("value")
+    if ct == "ComfyMathExpression":
+        expr = str(inp.get("expression", ""))
+        vals = {k.split(".", 1)[1]: _resolve(workflow, v, depth + 1) for k, v in inp.items() if k.startswith("values.")}
+        if any(v is None for v in vals.values()):
+            return None
+        try:
+            import math
+            return eval(expr, {"__builtins__": {}}, {**vals, "floor": math.floor, "ceil": math.ceil, "round": round,
+                                                     "min": min, "max": max, "abs": abs})
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 def _inspect_workflow(workflow):
     """영상 생성 노드의 width/height/length 수집 + 한도 검사. 반환: (generation 리스트, 위반 메시지 리스트)"""
     gen, violations = [], []
-    for nid, node in (workflow or {}).items():
+    workflow = workflow or {}
+    for nid, node in workflow.items():
         if not isinstance(node, dict) or node.get("class_type") not in _VIDEO_NODES:
             continue
         inp = node.get("inputs") or {}
-        w, h, n = inp.get("width"), inp.get("height"), inp.get("length")
+        w, h, n = (_resolve(workflow, inp.get(k)) for k in ("width", "height", "length"))
         entry = {"nodeId": nid, "classType": node["class_type"], "width": w, "height": h, "length": n}
         gen.append(entry)
         try:
             if w is not None and h is not None and int(w) * int(h) > MAX_PIXELS:
-                violations.append(f"node {nid}: width*height={int(w)*int(h)} > {MAX_PIXELS} (use <=832x480 / 480x832 / 640x640)")
+                violations.append(f"node {nid}: width*height={int(w)*int(h)} > {MAX_PIXELS} (max 720p-equivalent)")
             if n is not None and int(n) > MAX_FRAMES:
                 violations.append(f"node {nid}: length={n} > {MAX_FRAMES}")
         except (TypeError, ValueError):
