@@ -32,7 +32,12 @@ RUN set -e; cd /comfyui/models; \
     check diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors 14294742832; \
     check diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors 14294742832
 
-# start.sh 갱신 (EXTRA_MODELS 부팅 시 다운로드 지원)
+# S3 입출력 래퍼 핸들러 (dobedub-studio): boto3 + s3_handler.py
+RUN uv pip install "boto3>=1.34"
+COPY s3_handler.py /s3_handler.py
+ENV HANDLER_PATH=/s3_handler.py
+
+# start.sh 갱신 (EXTRA_MODELS 부팅 시 다운로드, HANDLER_PATH 지원)
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 ENV COMFY_ARGS="--use-sage-attention --fast fp8_matrix_mult --highvram"

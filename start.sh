@@ -58,15 +58,18 @@ fi
 echo "worker-comfyui: Starting ComfyUI (extra args: ${COMFY_ARGS})"
 
 COMFY_PID_FILE="/tmp/comfyui.pid"
+# 핸들러 선택: 기본 /handler.py, S3 래퍼 이미지는 /s3_handler.py
+: "${HANDLER_PATH:=/handler.py}"
+echo "worker-comfyui: handler = ${HANDLER_PATH}"
 
 if [ "$SERVE_API_LOCALLY" == "true" ]; then
     python -u /comfyui/main.py --disable-auto-launch --disable-metadata --listen --verbose "${COMFY_LOG_LEVEL}" --log-stdout ${COMFY_ARGS} &
     echo $! > "$COMFY_PID_FILE"
     echo "worker-comfyui: Starting RunPod Handler"
-    python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
+    python -u ${HANDLER_PATH} --rp_serve_api --rp_api_host=0.0.0.0
 else
     python -u /comfyui/main.py --disable-auto-launch --disable-metadata --verbose "${COMFY_LOG_LEVEL}" --log-stdout ${COMFY_ARGS} &
     echo $! > "$COMFY_PID_FILE"
     echo "worker-comfyui: Starting RunPod Handler"
-    python -u /handler.py
+    python -u ${HANDLER_PATH}
 fi
