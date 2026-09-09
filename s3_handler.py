@@ -41,6 +41,10 @@ manifest (manifestKey 에 저장):
 }
 
 자격증명: 엔드포인트 env (RunPod Secrets 권장) — AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION + AWS_DEFAULT_REGION
+
+가드 (모든 요청에 적용, GPU 실행 전 검사):
+  WanImageToVideo 등 영상 노드의 width*height > WAN_MAX_PIXELS(기본 409600=832x480) 또는 length > WAN_MAX_FRAMES(기본 81)
+  → 즉시 실패. 응답/manifest 의 "generation": [{nodeId, classType, width, height, length}] 에 실제 값 기록.
 """
 
 import base64
@@ -86,6 +90,36 @@ def _parse_s3_uri(uri):
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+_VIDEO_NODES = ("WanImageToVideo", "WanFirstLastFrameToVideo", "WanFunControlToVideo", "WanVaceToVideo",
+                "EmptyHunyuanLatentVideo", "Wan22ImageToVideoLatent")
+MAX_PIXELS = int(os.environ.get("WAN_MAX_PIXELS", "409600"))   # 832*480
+MAX_FRAMES = int(os.environ.get("WAN_MAX_FRAMES", "81"))          # 노드(세그먼트)당 프레임
+MAX_TOTAL_FRAMES = int(os.environ.get("WAN_MAX_TOTAL_FRAMES", "162"))  # 워크플로 전체 합계 (10s 체인 = 81+81)
+
+
+def _inspect_workflow(workflow):
+    """영상 생성 노드의 width/height/length 수집 + 한도 검사. 반환: (generation 리스트, 위반 메시지 리스트)"""
+    gen, violations = [], []
+    for nid, node in (workflow or {}).items():
+        if not isinstance(node, dict) or node.get("class_type") not in _VIDEO_NODES:
+            continue
+        inp = node.get("inputs") or {}
+        w, h, n = inp.get("width"), inp.get("height"), inp.get("length")
+        entry = {"nodeId": nid, "classType": node["class_type"], "width": w, "height": h, "length": n}
+        gen.append(entry)
+        try:
+            if w is not None and h is not None and int(w) * int(h) > MAX_PIXELS:
+                violations.append(f"node {nid}: width*height={int(w)*int(h)} > {MAX_PIXELS} (use <=832x480 / 480x832 / 640x640)")
+            if n is not None and int(n) > MAX_FRAMES:
+                violations.append(f"node {nid}: length={n} > {MAX_FRAMES}")
+        except (TypeError, ValueError):
+            pass  # 링크 입력([node, idx]) 등 비상수 값은 검사 생략
+    total = sum(int(g["length"]) for g in gen if isinstance(g["length"], (int, float)))
+    if total > MAX_TOTAL_FRAMES:
+        violations.append(f"total length={total} over {len(gen)} node(s) > {MAX_TOTAL_FRAMES}")
+    return gen, violations
 
 
 def _resolve_inputs(images):
@@ -171,14 +205,25 @@ def handler(job):
         out_cfg = None
     has_s3_in = any("s3Uri" in (im or {}) for im in (job_input.get("images") or []))
 
+    # 0) 워크플로 사전 검사 (해상도/프레임 한도) — GPU 실행 전 즉시 실패
+    generation, violations = _inspect_workflow(job_input.get("workflow"))
+    print(f"s3-handler - generation params: {json.dumps(generation)}")
+    if violations:
+        print(f"s3-handler - REJECTED: {violations}")
+
     # S3 관련 필드가 전혀 없으면 원본 핸들러 그대로 (기존 호환)
     if not out_cfg and not has_s3_in:
+        if violations:
+            return {"error": "workflow rejected: " + "; ".join(violations), "generation": generation}
         return base.handler(job)
 
     timings, errors, inputs_meta, outputs = {}, [], [], []
     status = "error"
     result = {}
     try:
+        if violations:
+            raise ValueError("workflow rejected: " + "; ".join(violations))
+
         # 1) 입력 다운로드
         t = time.time()
         images, inputs_meta = _resolve_inputs(job_input.get("images"))
@@ -208,7 +253,8 @@ def handler(job):
         if not out_cfg:  # S3 입력만 쓰고 출력은 기존 방식으로 반환
             return result
     except Exception as e:  # noqa: BLE001
-        print(traceback.format_exc())
+        if not str(e).startswith("workflow rejected"):
+            print(traceback.format_exc())
         errors.append(f"s3-handler: {e}")
         status = "error"
 
@@ -221,6 +267,7 @@ def handler(job):
         "createdAt": _now(),
         "inputs": inputs_meta,
         "outputs": outputs,
+        "generation": generation,                        # 실제 실행된 width/height/length
         "errors": errors,
         "timings": timings,
         "worker": {
@@ -236,7 +283,8 @@ def handler(job):
         errors.append(f"manifest write failed: {e}")
         print(f"s3-handler - manifest write failed: {e}")
 
-    resp = {"status": status, "outputs": outputs, "manifestKey": manifest_key, "timings": timings}
+    resp = {"status": status, "outputs": outputs, "manifestKey": manifest_key, "timings": timings,
+            "generation": generation}
     if errors:
         resp["errors"] = errors
     if status == "error":
