@@ -40,5 +40,6 @@ ENV HANDLER_PATH=/s3_handler.py
 # start.sh 갱신 (EXTRA_MODELS 부팅 시 다운로드, HANDLER_PATH 지원)
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
-ENV COMFY_ARGS="--use-sage-attention --fast fp8_matrix_mult --highvram"
+# --highvram 제외: hd(720p급) 10s 체인에서 두 14B 모델 상주 + 활성화 메모리로 96GB 초과(OOM). 기본 모드는 필요 시 자동 언로드.
+ENV COMFY_ARGS="--use-sage-attention --fast fp8_matrix_mult"
 CMD ["/start.sh"]
