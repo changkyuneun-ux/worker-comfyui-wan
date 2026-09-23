@@ -9,13 +9,6 @@ FROM ghcr.io/changkyuneun-ux/worker-comfyui-wan:5.10.0-sage
 ARG W22=https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files
 ARG W21=https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files
 
-# 내부 전용 LoRA (S3 presigned URL, 2026-09-22 발급, 7일 유효 — 빌드 1회용. 만료 후 재빌드 필요 시 재발급해서 교체)
-# 외부 미노출 대상: s3://dobedub-studio/internal/loras/ (계정 471112500555, ap-northeast-2)
-ARG LORA_NSFW_H="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/NSFW-22-H-e8.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234757Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=7cca90193472e053f0bc585f1af05e7a4f9826506bd219004e776dadad70b259"
-ARG LORA_NSFW_L="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/NSFW-22-L-e8.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234829Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=d011b918407d6f15bb97aad48ee47b1dcbe1f8f98e79ab296892e41d03b36626"
-ARG LORA_DR34_H="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/DR34ML4Y_I2V_14B_HIGH_V2.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234844Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=6e315bd4c199e7a9924c698d9ab2530dac95c84e18d0899e8e1bcf184d1db640"
-ARG LORA_DR34_L="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/DR34ML4Y_I2V_14B_LOW_V2.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234857Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=ca7b0a99045ccf650b278e5bacbc8021cf246ace8021887d7b696a27a1ae57d7"
-
 # 레이어 캐시를 위해 파일별 RUN 분리 (작은 파일 먼저)
 RUN comfy model download --url ${W21}/vae/wan_2.1_vae.safetensors \
       --relative-path models/vae --filename wan_2.1_vae.safetensors
@@ -30,7 +23,13 @@ RUN comfy model download --url ${W22}/diffusion_models/wan2.2_i2v_high_noise_14B
 RUN comfy model download --url ${W22}/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors \
       --relative-path models/diffusion_models --filename wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors
 
-# 내부 전용 LoRA 4종 (S3 presigned, 위 ARG 참고). 레이어 캐시를 위해 파일별 분리.
+# 내부 전용 LoRA (S3 presigned URL, 2026-09-22 발급, 7일 유효 — 빌드 1회용. 만료 후 재빌드 필요 시 재발급해서 교체)
+# 외부 미노출 대상: s3://dobedub-studio/internal/loras/ (계정 471112500555, ap-northeast-2)
+# 기존 HF 다운로드 RUN들 뒤에 선언 — 위쪽에 두면 그 RUN들의 레이어 캐시까지 무효화되어 매번 전체(38GB) 재다운로드됨(2026-09-22 빌드 타임아웃으로 확인)
+ARG LORA_NSFW_H="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/NSFW-22-H-e8.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234757Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=7cca90193472e053f0bc585f1af05e7a4f9826506bd219004e776dadad70b259"
+ARG LORA_NSFW_L="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/NSFW-22-L-e8.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234829Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=d011b918407d6f15bb97aad48ee47b1dcbe1f8f98e79ab296892e41d03b36626"
+ARG LORA_DR34_H="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/DR34ML4Y_I2V_14B_HIGH_V2.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234844Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=6e315bd4c199e7a9924c698d9ab2530dac95c84e18d0899e8e1bcf184d1db640"
+ARG LORA_DR34_L="https://dobedub-studio.s3.ap-northeast-2.amazonaws.com/internal/loras/DR34ML4Y_I2V_14B_LOW_V2.safetensors?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAW3MD6IVFR7YQRX4Z%2F20260922%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260922T234857Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=ca7b0a99045ccf650b278e5bacbc8021cf246ace8021887d7b696a27a1ae57d7"
 RUN comfy model download --url "${LORA_NSFW_H}" \
       --relative-path models/loras --filename NSFW-22-H-e8.safetensors
 RUN comfy model download --url "${LORA_NSFW_L}" \
